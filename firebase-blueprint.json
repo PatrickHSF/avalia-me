@@ -1,0 +1,144 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information and settings",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Provider": {
+      "title": "Provider",
+      "description": "Service provider details",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "location": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "description": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "rating": { "type": "number" },
+        "reviewCount": { "type": "integer" },
+        "featured": { "type": "boolean" },
+        "plan": { "type": "string" },
+        "hasPremiumBadge": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "category", "location", "userId"]
+    },
+    "Review": {
+      "title": "Review",
+      "description": "User review for a provider",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userPhoto": { "type": "string" },
+        "providerId": { "type": "string" },
+        "providerName": { "type": "string" },
+        "rating": { "type": "number" },
+        "comment": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "providerId", "rating"]
+    },
+    "Favorite": {
+      "title": "Favorite",
+      "description": "User favorite provider mapping",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "providerId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "providerId"]
+    },
+    "SupportTicket": {
+      "title": "SupportTicket",
+      "description": "Customer support ticket",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "status": { "type": "string" },
+        "adminResponse": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "description", "status"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "Subscription payments history",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "providerId": { "type": "string" },
+        "providerName": { "type": "string" },
+        "planId": { "type": "string" },
+        "planName": { "type": "string" },
+        "amount": { "type": "number" },
+        "paymentMethod": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "providerId", "planId", "amount", "status"]
+    },
+    "ProviderClick": {
+      "title": "ProviderClick",
+      "description": "Service click log for analytics and revenue",
+      "type": "object",
+      "properties": {
+        "providerId": { "type": "string" },
+        "clickType": { "type": "string" },
+        "userId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["providerId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile data"
+    },
+    "/providers/{providerId}": {
+      "schema": "Provider",
+      "description": "Collection of service providers"
+    },
+    "/reviews/{reviewId}": {
+      "schema": "Review",
+      "description": "Collection of reviews"
+    },
+    "/users/{userId}/favorites/{favoriteId}": {
+      "schema": "Favorite",
+      "description": "Subcollection of user favorites"
+    },
+    "/support_tickets/{ticketId}": {
+      "schema": "SupportTicket",
+      "description": "Help center & bug reports"
+    },
+    "/transactions/{transactionId}": {
+      "schema": "Transaction",
+      "description": "Premium plan transactions"
+    },
+    "/provider_clicks/{clickId}": {
+      "schema": "ProviderClick",
+      "description": "User click tracking events"
+    }
+  }
+}

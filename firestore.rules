@@ -1,0 +1,156 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Catch-all Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Global Helper Functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Identifies the system administrator (patrick.ferrareze@escola.pr.gov.br)
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == 'patrick.ferrareze@escola.pr.gov.br';
+    }
+
+    // Restricts standard actions to users with verified emails or the system administrator
+    function isVerifiedUser() {
+      return isSignedIn() && (request.auth.token.email_verified == true || request.auth.token.email == 'patrick.ferrareze@escola.pr.gov.br');
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // 3. Users Collection
+    match /users/{userId} {
+      function isValidUser(data) {
+        return (!('email' in data) || data.email == null || (data.email is string && data.email.size() <= 256)) &&
+               (!('name' in data) || data.name == null || (data.name is string && data.name.size() <= 128)) &&
+               (!('location' in data) || data.location == null || (data.location is string && data.location.size() <= 256)) &&
+               (!('photoURL' in data) || data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 2048));
+      }
+
+      allow get: if isSignedIn();
+      allow create: if (isOwner(userId) && isValidUser(incoming()) && incoming().uid == userId) || isAdmin();
+      allow update: if (isOwner(userId) && isValidUser(incoming()) && 
+                    incoming().diff(existing()).affectedKeys().hasOnly(['name', 'photoURL', 'location', 'updatedAt', 'isProvider', 'plan'])) || isAdmin();
+    }
+
+    // 4. Providers Collection
+    match /providers/{providerId} {
+      function isValidProvider(data) {
+        return (data.userId == request.auth.uid || !('userId' in data)) &&
+               (!('name' in data) || (data.name is string && data.name.size() <= 128)) &&
+               (!('category' in data) || data.category is string) &&
+               (!('whatsapp' in data) || data.whatsapp is string) &&
+               (!('rating' in data) || data.rating is number) &&
+               (!('reviewCount' in data) || data.reviewCount is number);
+      }
+
+      allow read: if true;
+      allow create: if isVerifiedUser() && isValidProvider(incoming()) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        // Public increment of rating or review count
+        (incoming().diff(existing()).affectedKeys().hasOnly(['reviewCount', 'rating'])) ||
+        // Owner updates fields, including checkout upgrading plan or downgrading
+        (isOwner(existing().userId) && isValidProvider(incoming()) && (
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name', 'category', 'location', 'whatsapp', 'description', 
+            'photoURL', 'updatedAt', 'plan', 'featured', 'hasPremiumBadge'
+          ])
+        ))
+      );
+      allow delete: if isAdmin() || (isVerifiedUser() && isOwner(existing().userId));
+    }
+
+    // 5. Reviews Collection
+    match /reviews/{reviewId} {
+      function isValidReview(data) {
+        return data.userId == request.auth.uid &&
+               data.rating is number && data.rating >= 1 && data.rating <= 5 &&
+               data.comment is string && data.comment.size() <= 1000 &&
+               data.providerId is string;
+      }
+      allow list: if true;
+      allow get: if true;
+      allow create: if isVerifiedUser() && isValidReview(incoming());
+      allow update: if isVerifiedUser() && isOwner(existing().userId) && isValidReview(incoming()) &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['rating', 'comment', 'updatedAt']);
+      allow delete: if isAdmin() || (
+        isVerifiedUser() && (
+          isOwner(existing().userId) || 
+          get(/databases/$(database)/documents/providers/$(existing().providerId)).data.userId == request.auth.uid
+        )
+      );
+    }
+
+    // 6. Favorites Subcollection (nested inside Users)
+    match /users/{userId}/favorites/{favoriteId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create, delete: if isOwner(userId) || isAdmin();
+    }
+
+    // New: Phones registry for unique phone verification
+    match /phones/{phoneId} {
+      allow get: if isSignedIn();
+      allow create: if isSignedIn() && incoming().userId == request.auth.uid;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    // 7. Provider Clicks Collection (Analytics clicks counter)
+    match /provider_clicks/{clickId} {
+      allow read: if isSignedIn();
+      allow create: if true; // Public visitors generate clicks
+    }
+
+    // 8. Support Tickets Collection
+    match /support_tickets/{ticketId} {
+      function isValidTicket(data) {
+        return data.userId is string &&
+               data.title is string && data.title.size() <= 200 &&
+               data.description is string && data.description.size() <= 2000 &&
+               data.status is string;
+      }
+
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedUser() && isValidTicket(incoming()) && incoming().userId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // 9. Premium Transactions Collection
+    match /transactions/{transactionId} {
+      function isValidTransaction(data) {
+        return data.userId is string &&
+               data.providerId is string &&
+               data.planId is string &&
+               data.amount is number &&
+               data.status is string;
+      }
+
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isVerifiedUser() && isValidTransaction(incoming()) && incoming().userId == request.auth.uid;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

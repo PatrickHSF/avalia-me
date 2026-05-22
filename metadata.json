@@ -1,0 +1,8 @@
+{
+  "name": "Avalia-Me",
+  "description": "Plataforma profissional para encontrar, contratar e avaliar prestadores de serviços com confiança e segurança.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
