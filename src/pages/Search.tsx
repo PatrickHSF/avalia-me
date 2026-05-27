@@ -6,7 +6,7 @@ import { motion } from 'motion/react';
 import ProviderCard from '../components/ProviderCard';
 import ReviewModal from '../components/ReviewModal';
 import { useNotifications } from '../lib/NotificationContext';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/AuthContext';
 import { CATEGORIES } from '../lib/categories';
 
@@ -69,6 +69,7 @@ const extractBasicCity = (locationStr: string | undefined): string => {
 export default function Search() {
   const { profile } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const initialCategory = searchParams.get('category');
   const initialFeatured = searchParams.get('featured') === 'true';
   
@@ -101,7 +102,9 @@ export default function Search() {
       }
 
       const snapshot = await getDocs(q);
-      const results: any[] = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const results: any[] = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter((p: any) => p.whatsappVerified === true);
       
       let filteredResults = results;
       if (isFeaturedFilter) {
@@ -119,6 +122,13 @@ export default function Search() {
       if (userCity) {
         filteredResults = filteredResults.filter((p: any) => extractBasicCity(p.location) === userCity);
       }
+      
+      // Sort results: featured (patrocinados) first, then by rating descending
+      filteredResults.sort((a, b) => {
+        if (a.featured && !b.featured) return -1;
+        if (!a.featured && b.featured) return 1;
+        return (b.rating || 0) - (a.rating || 0);
+      });
       
       setProviders(filteredResults);
       setLoading(false);
@@ -156,7 +166,7 @@ export default function Search() {
       </header>
 
       <main className="px-6 mt-8">
-        {!searchTerm && !selectedCategory && (
+        {!searchTerm && !selectedCategory && !isFeaturedFilter && (
           <div className="mb-8">
             <h3 className="text-xl font-black text-gray-950 mb-4 flex items-center justify-between">
               <span>Categorias</span>
@@ -201,28 +211,6 @@ export default function Search() {
           </div>
         )}
 
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xl font-bold text-gray-900">
-            {isFeaturedFilter 
-              ? 'Destaques em Alta' 
-              : selectedCategory 
-                ? `Resultados para ${selectedCategory}` 
-                : 'Mais procurados'}
-          </h3>
-          {(selectedCategory || searchTerm || isFeaturedFilter) && (
-            <button 
-              onClick={() => { 
-                setSelectedCategory(null); 
-                setSearchTerm(''); 
-                setSearchParams({});
-              }}
-              className="text-blue-600 font-bold text-sm"
-            >
-              Limpar
-            </button>
-          )}
-        </div>
-
         {loading ? (
              <div className="space-y-4">
                {[1, 2, 3].map(i => (
@@ -230,24 +218,108 @@ export default function Search() {
                ))}
              </div>
         ) : (
-          <div className="space-y-4">
-            {providers.map(provider => (
-              <ProviderCard key={provider.id} provider={provider} onReview={() => setSelectedProvider(provider)} />
-            ))}
-            {providers.length === 0 && (
-              <div className="text-center py-20 px-4 bg-gray-50/50 rounded-[32px] border border-dashed border-gray-200">
-                <SearchIcon className="text-gray-300 mx-auto mb-4" size={64} />
-                <h4 className="text-lg font-black text-gray-900 leading-tight">
-                  {profile?.location ? "Não achamos nenhum prestador em sua cidade :(" : "Nenhum resultado encontrado"}
-                </h4>
-                <p className="text-gray-500 text-sm mt-2 max-w-xs mx-auto">
-                  {profile?.location 
-                    ? "Tente verificar outra localização no seu perfil e volte para buscar!" 
-                    : "Tente buscar por outro termo ou categoria."}
-                </p>
+          <>
+            {/* Case 1: Active query or selected category or featured filter */}
+            {(searchTerm || selectedCategory || isFeaturedFilter) ? (
+              <div>
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="text-xl font-bold text-gray-900">
+                    {isFeaturedFilter 
+                      ? 'Destaques em Alta' 
+                      : selectedCategory 
+                        ? `Resultados para ${selectedCategory}` 
+                        : 'Resultados da busca'}
+                  </h3>
+                  <button 
+                    onClick={() => { 
+                      setSelectedCategory(null); 
+                      setSearchTerm(''); 
+                      setSearchParams({});
+                    }}
+                    className="text-blue-600 font-bold text-sm bg-blue-50 hover:bg-blue-100 px-3 py-1 rounded-xl transition-all"
+                  >
+                    Limpar
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {providers.map(provider => (
+                    <ProviderCard key={provider.id} provider={provider} onReview={() => setSelectedProvider(provider)} />
+                  ))}
+                  {providers.length === 0 && (
+                    <div className="text-center py-20 px-4 bg-gray-50/50 rounded-[32px] border border-dashed border-gray-200">
+                      <SearchIcon className="text-gray-300 mx-auto mb-4" size={64} />
+                      <h4 className="text-lg font-black text-gray-900 leading-tight">
+                        {profile?.location ? "Não achamos nenhum prestador em sua cidade :(" : "Nenhum resultado encontrado"}
+                      </h4>
+                      <p className="text-gray-500 text-sm mt-2 max-w-xs mx-auto">
+                        {profile?.location 
+                          ? "Tente verificar outra localização no seu perfil e volte para buscar!" 
+                          : "Tente buscar por outro termo ou categoria."}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* Case 2: default landing layout showing "Em Alta" & "Melhores Avaliados" separately */
+              <div className="space-y-10">
+                {/* Em Alta Section */}
+                <div>
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <h2 className="text-xl font-black text-gray-900 leading-tight flex items-center gap-1.5">
+                        <span>🔥</span> Em Alta
+                      </h2>
+                      <p className="text-xs font-bold text-gray-400 mt-0.5">Parceiros em destaque patrocinado</p>
+                    </div>
+                  </div>
+
+                  {providers.filter((p: any) => p.featured === true).length === 0 ? (
+                    <div className="bg-gray-50 border border-dashed border-gray-200 rounded-[32px] p-8 text-center select-none">
+                      <p className="text-gray-500 text-sm font-semibold mb-3">Anuncie aqui para seu perfil ficar em alta!</p>
+                      <button 
+                        onClick={() => navigate('/become-provider')}
+                        className="text-xs bg-blue-600 hover:bg-blue-700 text-white font-black px-5 py-3 rounded-full shadow-md transition-all active:scale-95 cursor-pointer"
+                      >
+                        Tornar-se parceiro patrocinado
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {providers.filter((p: any) => p.featured === true).map(provider => (
+                        <ProviderCard key={provider.id} provider={provider} onReview={() => setSelectedProvider(provider)} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Melhores Avaliados Section */}
+                <div>
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <h2 className="text-xl font-black text-gray-900 leading-tight flex items-center gap-1.5">
+                        <span>🏆</span> Melhores Avaliados
+                      </h2>
+                      <p className="text-xs font-bold text-gray-400 mt-0.5">Profissionais mais bem votados</p>
+                    </div>
+                  </div>
+
+                  {[...providers].sort((a: any, b: any) => (b.rating || 0) - (a.rating || 0)).length === 0 ? (
+                    <div className="text-center py-10 bg-gray-50/55 border border-dashed border-gray-200 rounded-[32px]">
+                      <p className="text-gray-550 text-sm italic font-medium">Nenhum prestador encontrado em sua região</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {[...providers].sort((a: any, b: any) => (b.rating || 0) - (a.rating || 0)).slice(0, 10).map(provider => (
+                        <ProviderCard key={provider.id} provider={provider} onReview={() => setSelectedProvider(provider)} hideSponsoredBadge={true} />
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
-          </div>
+          </>
         )}
       </main>
 

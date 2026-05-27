@@ -57,15 +57,25 @@ export default function LocationPicker({ isOpen, onClose, onSelect, initialValue
   const fetchAddress = async (lat: number, lng: number) => {
     setLoading(true);
     try {
+      // Nominatim requires a User-Agent or email, we pass standard headers
       const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
-        headers: { 'Accept-Language': 'pt-BR' }
+        headers: { 
+          'Accept-Language': 'pt-BR'
+        }
       });
+      if (!response.ok) {
+        throw new Error(`HTTP status ${response.status}`);
+      }
       const data = await response.json();
       if (data.display_name) {
         setAddress(data.display_name);
+      } else {
+        setAddress(`Próximo a lat: ${lat.toFixed(4)}, lng: ${lng.toFixed(4)}`);
       }
     } catch (error) {
       console.error("Geocoding error:", error);
+      // Fallback em caso de erro de rede (Failed to fetch)
+      setAddress(`Próximo de lat: ${lat.toFixed(4)}, lng: ${lng.toFixed(4)} (Toque para editar)`);
     } finally {
       setLoading(false);
     }
@@ -77,16 +87,25 @@ export default function LocationPicker({ isOpen, onClose, onSelect, initialValue
     setSearching(true);
     try {
       const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=1`, {
-        headers: { 'Accept-Language': 'pt-BR' }
+        headers: { 
+          'Accept-Language': 'pt-BR'
+        }
       });
+      if (!response.ok) {
+        throw new Error(`HTTP status ${response.status}`);
+      }
       const data = await response.json();
       if (data && data.length > 0) {
         const newPos: [number, number] = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
         setPosition(newPos);
         setAddress(data[0].display_name);
+      } else {
+        // Se a busca não encontrou mas foi concluída
+        alert("Nenhum local foi encontrado com esse termo. Mas você pode clicar no mapa para marcar ou digitar o endereço abaixo!");
       }
     } catch (error) {
       console.error("Search error:", error);
+      alert("O serviço de pesquisa rápida de endereço está indisponível ou bloqueado no iframe. Por favor, clique diretamente no seu local no mapa ou digite o endereço manualmente abaixo!");
     } finally {
       setSearching(false);
     }
@@ -190,13 +209,17 @@ export default function LocationPicker({ isOpen, onClose, onSelect, initialValue
                 <div className={`shrink-0 ${loading ? 'animate-pulse' : ''}`}>
                   <MapPin className="text-blue-600" size={24} />
                 </div>
-                <div className="overflow-hidden">
+                <div className="overflow-hidden flex-1">
                    <p className="text-xs text-blue-600/60 font-bold uppercase tracking-wider">
-                     {loading ? 'Buscando endereço...' : 'Local Selecionado'}
+                     {loading ? 'Buscando endereço...' : 'Editar Endereço Manualmente:'}
                    </p>
-                   <p className="font-bold text-gray-900 truncate">
-                     {address || 'Clique no mapa para selecionar...'}
-                   </p>
+                   <input
+                     type="text"
+                     value={address}
+                     onChange={(e) => setAddress(e.target.value)}
+                     placeholder="Digite ou clique no mapa..."
+                     className="w-full bg-transparent font-bold text-gray-905 text-sm outline-none border-b border-transparent focus:border-blue-400/50 py-0.5"
+                   />
                 </div>
               </div>
               <button 

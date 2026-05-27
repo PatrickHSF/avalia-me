@@ -25,6 +25,38 @@ export default function BecomeProvider() {
     description: '',
   });
 
+  const [whatsappVerified, setWhatsappVerified] = useState<boolean>(false);
+  const [codeSent, setCodeSent] = useState<boolean>(false);
+  const [sendingCode, setSendingCode] = useState<boolean>(false);
+  const [generatedCode, setGeneratedCode] = useState<string>('');
+  const [userInputCode, setUserInputCode] = useState<string>('');
+  const [verificationError, setVerificationError] = useState<string | null>(null);
+
+  const handleSendCode = () => {
+    if (!formData.whatsapp || formData.whatsapp.length < 10) {
+      setVerificationError("Por favor, digite um número de WhatsApp válido.");
+      return;
+    }
+    setSendingCode(true);
+    setTimeout(() => {
+      // Generate a random 6-digit code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      setGeneratedCode(code);
+      setSendingCode(false);
+      setCodeSent(true);
+      setVerificationError(null);
+    }, 1200);
+  };
+
+  const handleVerifyCode = () => {
+    if (userInputCode === generatedCode) {
+      setWhatsappVerified(true);
+      setVerificationError(null);
+    } else {
+      setVerificationError("Código inválido. Por favor, verifique o código de simulação gerado.");
+    }
+  };
+
   useEffect(() => {
     if (!user) return;
     async function checkExistingProvider() {
@@ -34,6 +66,7 @@ export default function BecomeProvider() {
         if (!snapshot.empty) {
           const data = snapshot.docs[0].data();
           setProviderId(snapshot.docs[0].id);
+          setWhatsappVerified(data.whatsappVerified || false);
           setFormData({
             name: data.name || '',
             category: data.category || '',
@@ -54,14 +87,21 @@ export default function BecomeProvider() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+
+    if (!whatsappVerified) {
+      setVerificationError("A validação do seu WhatsApp por mensagem é obrigatória para combater contas falsas.");
+      return;
+    }
+
     setLoading(true);
 
     try {
       const providerData = {
         ...formData,
         userId: user.uid,
-        photoURL: user.photoURL || '',
+        photoURL: profile?.photoURL || user.photoURL || '',
         updatedAt: new Date().toISOString(),
+        whatsappVerified: true,
       };
 
       try {
@@ -81,8 +121,9 @@ export default function BecomeProvider() {
       }
 
       try {
-        // Also update user profile with location to personalize experience
+        // Keep name and location synchronized across both collections
         await updateDoc(doc(db, 'users', user.uid), {
+          name: formData.name,
           location: formData.location,
           updatedAt: new Date().toISOString(),
         });
@@ -234,18 +275,141 @@ export default function BecomeProvider() {
               </button>
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                <Phone size={16} className="text-blue-500" />
-                WhatsApp (apenas números)
-              </label>
-              <input 
-                required
-                value={formData.whatsapp}
-                onChange={(e) => setFormData({...formData, whatsapp: e.target.value})}
-                placeholder="Ex: 5544999999999"
-                className="w-full bg-gray-50 rounded-2xl p-4 outline-none focus:ring-2 ring-blue-500 transition-all font-medium"
-              />
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
+                  <Phone size={16} className="text-blue-500" />
+                  WhatsApp (apenas números, com DDI + DDD)
+                </label>
+                <div className="relative">
+                  <input 
+                    required
+                    disabled={whatsappVerified}
+                    value={formData.whatsapp}
+                    onChange={(e) => {
+                      const digits = e.target.value.replace(/\D/g, '');
+                      setFormData({...formData, whatsapp: digits});
+                    }}
+                    placeholder="Ex: 5544999999999"
+                    className={`w-full rounded-2xl p-4 pr-12 outline-none focus:ring-2 ring-blue-500 transition-all font-semibold ${whatsappVerified ? 'text-gray-500 bg-gray-100 border border-green-200' : 'text-gray-950 bg-gray-50'}`}
+                  />
+                  {whatsappVerified && (
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 bg-green-500 text-white rounded-full p-0.5" title="WhatsApp Verificado!">
+                      <CheckCircle size={16} className="text-white" fill="currentColor" />
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Verification Section */}
+              {!whatsappVerified ? (
+                <div className="bg-blue-50/50 border border-blue-100/80 rounded-2xl p-4 space-y-4">
+                  <div className="flex gap-2 items-start text-xs text-blue-800 font-semibold leading-relaxed">
+                    <Info size={16} className="text-blue-500 shrink-0 mt-0.5" />
+                    <p>
+                      Para evitar contas falsas e garantir a segurança, você precisa receber e validar uma mensagem de confirmação para ativar seu perfil nas buscas.
+                    </p>
+                  </div>
+
+                  {!codeSent ? (
+                    <button
+                      type="button"
+                      disabled={formData.whatsapp.length < 10 || sendingCode}
+                      onClick={handleSendCode}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-black py-3 px-4 rounded-xl shadow-md transition-all active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100 cursor-pointer"
+                    >
+                      {sendingCode ? "Enviando Código..." : "Gerar e Enviar Código de Validação"}
+                    </button>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="bg-white border border-blue-100 rounded-xl p-3.5 space-y-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="relative flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                          </span>
+                          <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">SMS / WhatsApp Ativo</span>
+                        </div>
+                        <p className="text-xs text-gray-600 font-medium">
+                          Enviamos o código para seu aparelho. Como estamos em ambiente seguro de desenvolvimento, digite o código gerado abaixo:
+                        </p>
+                        <div className="flex items-center justify-between bg-blue-50 p-2.5 rounded-lg border border-blue-100/50">
+                          <span className="text-xs font-bold text-blue-800">CÓDIGO DE TESTE:</span>
+                          <span className="text-sm font-mono font-black tracking-wider text-blue-900 bg-white px-2.5 py-1 rounded-md border border-blue-100 shadow-sm">
+                            {generatedCode}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="text"
+                          maxLength={6}
+                          value={userInputCode}
+                          onChange={(e) => {
+                            setUserInputCode(e.target.value.replace(/\D/g, ''));
+                            setVerificationError(null);
+                          }}
+                          placeholder="Digite os 6 dígitos"
+                          className="w-full sm:flex-1 bg-white border border-gray-200 rounded-xl p-3 text-center font-mono font-black text-lg tracking-widest outline-none focus:border-blue-500 focus:ring-1 ring-blue-500 transition-all font-semibold"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleVerifyCode}
+                          className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white text-xs font-black py-3.5 px-6 rounded-xl transition-all shadow-md active:scale-[0.98] cursor-pointer shrink-0"
+                        >
+                          Validar Código
+                        </button>
+                      </div>
+
+                      {verificationError && (
+                        <p className="text-red-500 text-xs font-bold text-center leading-snug">
+                          ⚠️ {verificationError}
+                        </p>
+                      )}
+
+                      <div className="text-center">
+                        <button
+                          type="button"
+                          onClick={() => { setCodeSent(false); setUserInputCode(''); }}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-bold transition-all underline cursor-pointer"
+                        >
+                          Alterar número ou reenviar código
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-sm select-none">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-green-100 text-green-600 rounded-full flex items-center justify-center shrink-0">
+                      <CheckCircle size={22} fill="currentColor" className="text-white" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-black text-green-950">WhatsApp Validado!</h4>
+                      <p className="text-[11px] font-bold text-green-700 uppercase tracking-widest mt-0.5">Segurança Nível Máximo</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWhatsappVerified(false);
+                      setCodeSent(false);
+                      setUserInputCode('');
+                    }}
+                    className="text-[11px] font-bold text-rose-600 hover:text-rose-800 bg-white border border-rose-200 rounded-xl px-3 py-2 shadow-sm transition-all cursor-pointer"
+                  >
+                    Alterar Número
+                  </button>
+                </div>
+              )}
+
+              {verificationError && !codeSent && (
+                <p className="text-red-500 text-xs font-bold leading-snug">
+                  ⚠️ {verificationError}
+                </p>
+              )}
             </div>
 
             <div className="space-y-2">

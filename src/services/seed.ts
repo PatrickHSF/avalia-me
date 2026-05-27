@@ -15,7 +15,8 @@ export async function seedProviders() {
       whatsapp: "5544999999999",
       rating: 4.9,
       reviewCount: 128,
-      featured: true
+      featured: true,
+      whatsappVerified: true
     },
     {
       name: "Maria Oliveira",
@@ -26,7 +27,8 @@ export async function seedProviders() {
       whatsapp: "5544888888888",
       rating: 4.8,
       reviewCount: 89,
-      featured: true
+      featured: true,
+      whatsappVerified: true
     },
     {
       name: "Carlos Mendes",
@@ -37,7 +39,8 @@ export async function seedProviders() {
       whatsapp: "5543777777777",
       rating: 5.0,
       reviewCount: 201,
-      featured: true
+      featured: true,
+      whatsappVerified: true
     },
     {
       name: "Ana Souza",
@@ -48,7 +51,8 @@ export async function seedProviders() {
       whatsapp: "5544666666666",
       rating: 4.7,
       reviewCount: 45,
-      featured: false
+      featured: false,
+      whatsappVerified: true
     },
     {
       name: "Pedro Santos",
@@ -59,7 +63,8 @@ export async function seedProviders() {
       whatsapp: "5545555555555",
       rating: 4.9,
       reviewCount: 67,
-      featured: false
+      featured: false,
+      whatsappVerified: true
     }
   ];
 

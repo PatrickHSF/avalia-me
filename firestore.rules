@@ -109,7 +109,7 @@ service cloud.firestore {
 
     // New: Phones registry for unique phone verification
     match /phones/{phoneId} {
-      allow get: if isSignedIn();
+      allow get: if true; // Public check allowed to verify phone uniqueness during registration
       allow create: if isSignedIn() && incoming().userId == request.auth.uid;
       allow delete: if isSignedIn() && existing().userId == request.auth.uid;
     }

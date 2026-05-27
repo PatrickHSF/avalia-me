@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../lib/AuthContext';
 import { db } from '../lib/firebase';
-import { collection, query, getDocs, updateDoc, doc, onSnapshot, orderBy } from 'firebase/firestore';
-import { ArrowLeft, Landmark, MessageSquare, ShieldAlert, BadgeCheck, CheckCircle2, TrendingUp, AlertTriangle, Play, HelpCircle, Server } from 'lucide-react';
+import { collection, query, getDocs, updateDoc, doc, onSnapshot, orderBy, deleteDoc } from 'firebase/firestore';
+import { ArrowLeft, Landmark, MessageSquare, ShieldAlert, BadgeCheck, CheckCircle2, TrendingUp, AlertTriangle, Play, HelpCircle, Server, Trash2, Database, RefreshCw } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useNavigate } from 'react-router-dom';
 
@@ -20,6 +20,10 @@ export default function AdminDashboard() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [totalClicksCount, setTotalClicksCount] = useState(0);
 
+  // States para limpeza de sementes e simulações
+  const [isCleaning, setIsCleaning] = useState(false);
+  const [cleanFeedback, setCleanFeedback] = useState<string | null>(null);
+
   // Stats
   const [totals, setTotals] = useState({
     subscriptionRevenue: 0,
@@ -32,6 +36,57 @@ export default function AdminDashboard() {
   const [respondingToTicketId, setRespondingToTicketId] = useState<string | null>(null);
   const [adminResponseText, setAdminResponseText] = useState('');
   const [isSubmittingResponse, setIsSubmittingResponse] = useState(false);
+
+  // Lógica para purgar e remover simultaneamente prestadores de simulação do banco Firestore
+  const clearSimulationData = async () => {
+    if (!window.confirm("Atenção: Isso irá remover permanentemente do banco todos os prestadores estáticos de simulação (como João, Maria, Pedro Santos, etc.) e as contas de demonstração. Deseja prosseguir?")) {
+      return;
+    }
+    
+    setIsCleaning(true);
+    setCleanFeedback("Purificando banco de dados (removendo simulações)...");
+
+    try {
+      const providersSnap = await getDocs(collection(db, 'providers'));
+      let deletedCount = 0;
+
+      const simulationNames = [
+        "João Silva", 
+        "Maria Oliveira", 
+        "Carlos Mendes", 
+        "Ana Souza", 
+        "Pedro Santos",
+        "Demo João Prestador",
+        "Demo Maria Cliente"
+      ];
+
+      for (const docSnap of providersSnap.docs) {
+        const data = docSnap.data();
+        const docId = docSnap.id;
+        
+        const isSimulation = !data.userId || 
+                             simulationNames.includes(data.name) || 
+                             docId === 'prestador.demo@avalia.me' ||
+                             data.email === 'prestador.demo@avalia.me' ||
+                             data.email === 'cliente.demo@avalia.me' ||
+                             (data.name && data.name.includes("Demo"));
+
+        if (isSimulation) {
+          await deleteDoc(doc(db, 'providers', docId));
+          deletedCount++;
+        }
+      }
+
+      setCleanFeedback(`Sucesso! ${deletedCount} prestador(es) simulados foram removidos do seu banco de dados.`);
+      setTimeout(() => setCleanFeedback(null), 5000);
+    } catch (error: any) {
+      console.error("Erro durante a limpeza:", error);
+      setCleanFeedback("Erro ao limpar dados: " + (error.message || String(error)));
+      setTimeout(() => setCleanFeedback(null), 5000);
+    } finally {
+      setIsCleaning(false);
+    }
+  };
 
   useEffect(() => {
     if (!user || !isAdmin) {
@@ -409,6 +464,37 @@ export default function AdminDashboard() {
               <BadgeCheck size={16} className="text-blue-500" />
               Diretório Administrativo de Prestadores
             </h3>
+
+            {/* Painel Administrativo de Purga/Limpeza do Banco */}
+            <div className="bg-white p-5 rounded-[28px] border border-red-100 shadow-xs space-y-3">
+              <div className="flex items-start gap-2.5">
+                <div className="bg-red-50 text-red-500 p-2 rounded-xl">
+                  <Database size={20} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-gray-800 text-xs">Purificação de Dados de Simulação</h4>
+                  <p className="text-[10px] text-gray-400 leading-relaxed mt-0.5">
+                    Delete instantaneamente todos os prestadores e relatos de sementes dinâmicas simuladas que estão poluindo o catálogo da base de dados. Isso deixará visíveis apenas os seus prestadores da conta real em produção.
+                  </p>
+                </div>
+              </div>
+
+              {cleanFeedback && (
+                <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-[10px] font-bold text-blue-700 flex items-center gap-2 animate-pulse">
+                  <RefreshCw size={12} className="animate-spin text-blue-500" />
+                  <span>{cleanFeedback}</span>
+                </div>
+              )}
+
+              <button
+                onClick={clearSimulationData}
+                disabled={isCleaning}
+                className="w-full bg-red-50 hover:bg-red-100 border border-red-100 text-red-600 font-black py-3 rounded-2xl text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
+              >
+                <Trash2 size={14} />
+                <span>{isCleaning ? "Limpando Banco..." : "Purgar e Limpar Todos os Prestadores Simulados"}</span>
+              </button>
+            </div>
 
             {providers.length === 0 ? (
               <div className="bg-white p-8 rounded-3xl text-center text-gray-400 text-xs border border-gray-100">

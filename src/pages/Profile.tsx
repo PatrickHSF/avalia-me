@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../lib/AuthContext';
-import { LogOut, Star, Heart, Shield, HelpCircle, Settings, ChevronRight, User as UserIcon, Briefcase, MapPin, TrendingUp, CreditCard, LayoutDashboard, X, Camera, Check, Upload } from 'lucide-react';
+import { LogOut, Star, Heart, Shield, HelpCircle, Settings, ChevronRight, User as UserIcon, Briefcase, MapPin, TrendingUp, CreditCard, LayoutDashboard, X, Camera, Check, Upload, Phone, AlertCircle } from 'lucide-react';
 import { motion } from 'motion/react';
 import { auth, db } from '../lib/firebase';
 import { signOut } from 'firebase/auth';
@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import LocationPicker from '../components/LocationPicker';
 import EngagementModal from '../components/EngagementModal';
 import { doc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore';
+import { formatLocation } from '../lib/location';
 
 export default function Profile() {
   const { profile, user } = useAuth();
@@ -16,6 +17,7 @@ export default function Profile() {
   const [isPickerOpen, setIsPickerOpen] = useState(false);
   const [isEngagementOpen, setIsEngagementOpen] = useState(false);
   const [isProvider, setIsProvider] = useState(false);
+  const [isWhatsappVerified, setIsWhatsappVerified] = useState(false);
   const [providerId, setProviderId] = useState('');
   const [providerPlan, setProviderPlan] = useState('');
   const [stats, setStats] = useState({
@@ -39,6 +41,17 @@ export default function Profile() {
   }, [profile?.photoURL]);
 
   useEffect(() => {
+    if (isPhotoModalOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isPhotoModalOpen]);
+
+  useEffect(() => {
     if (!user) return;
     async function loadStats() {
       try {
@@ -57,7 +70,16 @@ export default function Profile() {
         // Query favorites
         const favoritesQ = query(collection(db, 'users', user.uid, 'favorites'));
         const favoritesSnapshot = await getDocs(favoritesQ);
-        const favoritesCount = favoritesSnapshot.size;
+        const favs = favoritesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        // Only count favorites that point to actual existing providers
+        const providerPromises = favs.map(async (f: any) => {
+          if (!f.providerId) return null;
+          const pDoc = await getDocs(query(collection(db, 'providers'), where('__name__', '==', f.providerId)));
+          return !pDoc.empty ? pDoc.docs[0].id : null;
+        });
+        const activeFavorites = (await Promise.all(providerPromises)).filter(p => p !== null);
+        const favoritesCount = activeFavorites.length;
 
         // Check if provider
         const providersQ = query(collection(db, 'providers'), where('userId', '==', user.uid));
@@ -68,10 +90,12 @@ export default function Profile() {
           setProviderId(pDoc.id);
           const pData = pDoc.data();
           setProviderPlan(pData.plan || 'bronze');
+          setIsWhatsappVerified(pData.whatsappVerified || false);
         } else {
           setIsProvider(false);
           setProviderId('');
           setProviderPlan('');
+          setIsWhatsappVerified(false);
         }
 
         setStats({
@@ -99,6 +123,12 @@ export default function Profile() {
         location: loc,
         updatedAt: new Date().toISOString()
       });
+      if (providerId) {
+        await updateDoc(doc(db, 'providers', providerId), {
+          location: loc,
+          updatedAt: new Date().toISOString()
+        });
+      }
       setIsPickerOpen(false);
       // Profile will auto-refresh via AuthContext
     } catch (error) {
@@ -139,16 +169,20 @@ export default function Profile() {
     { 
       icon: <MapPin />, 
       title: "Minha Localização", 
-      sub: profile?.location || "Defina sua cidade para ver os melhores perto de você", 
+      sub: profile?.location ? formatLocation(profile.location) : "Defina sua cidade para ver os melhores perto de você", 
       onClick: () => setIsPickerOpen(true),
       color: "bg-green-50 text-green-500" 
     },
     { 
       icon: <Briefcase />, 
       title: isProvider ? "Editar Perfil Profissional" : "Seja um Prestador", 
-      sub: isProvider ? "Atualize sua ficha" : "Cadastre seus serviços", 
+      sub: isProvider 
+        ? (isWhatsappVerified ? "Perfil ativo e visível" : "⚠️ Pendente: Validar WhatsApp") 
+        : "Cadastre seus serviços", 
       link: "/become-provider", 
-      color: "bg-indigo-50 text-indigo-500" 
+      color: isProvider && !isWhatsappVerified 
+        ? "bg-red-50 text-red-500 border border-red-200 animate-pulse" 
+        : "bg-indigo-50 text-indigo-500" 
     },
     ...(isProvider ? [
       {
@@ -261,7 +295,11 @@ export default function Profile() {
                initial={{ scale: 0.8, opacity: 0 }}
                animate={{ scale: 1, opacity: 1 }}
                src={profile.photoURL || `https://ui-avatars.com/api/?name=${profile.name}`} 
-               className="w-28 h-28 rounded-full border-4 border-white/30 shadow-2xl object-cover group-hover:brightness-90 transition-all duration-300"
+               className={`w-28 h-28 rounded-full border-4 shadow-2xl object-cover group-hover:brightness-90 transition-all duration-300 ${
+                 isProvider 
+                   ? (isWhatsappVerified ? 'border-green-400' : 'border-red-500') 
+                   : 'border-white/30'
+               }`}
              />
              <div className="absolute inset-0 bg-black/40 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                <Camera className="text-white w-8 h-8" />
@@ -272,6 +310,42 @@ export default function Profile() {
            </div>
            <h2 className="mt-4 text-2xl font-black">{profile.name}</h2>
            <p className="text-white/70 text-sm">{profile.email}</p>
+           
+           <div className="mt-3 flex flex-col items-center gap-2">
+             {isProvider ? (
+               <>
+                 {isWhatsappVerified ? (
+                   <span className="inline-flex items-center gap-1.5 bg-green-500 text-white font-black text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-full shadow-md select-none">
+                     <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
+                     Perfil Listado (Visível)
+                   </span>
+                 ) : (
+                   <span className="inline-flex items-center gap-1.5 bg-red-600 text-white font-black text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-full shadow-md select-none animate-bounce">
+                     <span className="w-1.5 h-1.5 rounded-full bg-white"></span>
+                     Não Listado (WhatsApp pendente)
+                   </span>
+                 )}
+                 {/* Exibição detalhada do tipo de assinatura */}
+                 <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-[10px] font-black uppercase tracking-wider border shadow-inner ${
+                   providerPlan === 'ouro'
+                     ? 'bg-amber-400/20 text-amber-300 border-amber-400/30'
+                     : providerPlan === 'prata'
+                     ? 'bg-blue-400/20 text-blue-200 border-blue-400/30'
+                     : 'bg-white/10 text-white/80 border-white/15'
+                 }`}>
+                   🎁 Assinatura: {
+                     providerPlan === 'ouro' ? 'Ouro Max Deluxe' :
+                     providerPlan === 'prata' ? 'Prata Plus' :
+                     'Bronze Standard'
+                   }
+                 </span>
+               </>
+             ) : (
+               <span className="inline-flex items-center gap-1.5 bg-white/20 text-white/90 font-black text-[10px] uppercase tracking-wider px-3 py-1.5 rounded-full select-none">
+                 Conta Cliente
+               </span>
+             )}
+           </div>
         </div>
       </header>
 
@@ -296,6 +370,29 @@ export default function Profile() {
              <div className="text-xs font-bold text-gray-400">Média</div>
           </div>
         </div>
+
+        {isProvider && !isWhatsappVerified && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            onClick={() => navigate('/become-provider')}
+            className="mb-8 bg-red-50 border-2 border-red-200 rounded-3xl p-5 flex items-start gap-4 cursor-pointer hover:bg-red-100/40 hover:border-red-300 transition-all shadow-md group"
+          >
+            <div className="bg-red-600 text-white p-3 rounded-2xl shrink-0 group-hover:scale-105 transition-transform">
+              <Phone size={20} className="text-white fill-white" />
+            </div>
+            <div className="flex-1 space-y-1">
+              <h4 className="font-extrabold text-red-950 text-sm leading-tight flex items-center gap-1.5">
+                <AlertCircle size={16} className="text-red-600 shrink-0" />
+                Validar Conta (WhatsApp)
+              </h4>
+              <p className="text-xs text-red-700 font-semibold leading-relaxed">
+                Conta pendente! Seu perfil está <b className="font-extrabold">OCULTO</b> de buscas. Valide seu número para listar-se e garantir mais segurança.
+              </p>
+            </div>
+            <ChevronRight className="text-red-400 shrink-0 self-center group-hover:text-red-600 group-hover:translate-x-0.5 transition-all" size={20} />
+          </motion.div>
+        )}
 
         <div className="space-y-4">
           {MENU_ITEMS.map((item, i) => (
@@ -348,11 +445,11 @@ export default function Profile() {
 
       {/* Modal para Alterar Foto de Perfil */}
       {isPhotoModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm overflow-y-auto">
           <motion.div 
             initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl text-left"
+            className="bg-white rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl text-left my-auto"
           >
             <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
               <div>
@@ -370,7 +467,7 @@ export default function Profile() {
               </button>
             </div>
 
-            <div className="p-6 space-y-6 max-h-[65vh] overflow-y-auto">
+            <div className="p-6 space-y-6 max-h-[45vh] sm:max-h-[60vh] overflow-y-auto">
               {/* Live Preview */}
               <div className="flex flex-col items-center gap-2">
                 <p className="text-xs font-bold text-gray-400 self-start">Visualização da foto</p>

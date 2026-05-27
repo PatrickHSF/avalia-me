@@ -260,7 +260,7 @@ export default function EngagementModal({ isOpen, onClose }: EngagementModalProp
                   <button
                     onClick={() => {
                       onClose();
-                      navigate('/premium');
+                      navigate('/premium-plans');
                     }}
                     className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 shadow-lg transition-transform active:scale-[0.98] duration-200"
                   >
@@ -382,7 +382,7 @@ export default function EngagementModal({ isOpen, onClose }: EngagementModalProp
                     <button
                       onClick={() => {
                         onClose();
-                        navigate('/premium');
+                        navigate('/premium-plans');
                       }}
                       className="w-full bg-blue-600 hover:bg-blue-700 text-white font-black py-3.5 rounded-2xl text-xs flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
                     >

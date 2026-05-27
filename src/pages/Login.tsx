@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { LogIn, Mail, Lock, User, AlertCircle, Sparkles, ExternalLink, ShieldCheck, UserCheck, Phone, Check, X, Eye, EyeOff } from 'lucide-react';
+import { LogIn, Mail, Lock, User, AlertCircle, Sparkles, ExternalLink, ShieldCheck, UserCheck, Phone, Check, X, Eye, EyeOff, CheckCircle, Info } from 'lucide-react';
 import { motion } from 'motion/react';
-import { signInWithGoogle, signInWithFacebook, signInWithApple, auth, db } from '../lib/firebase';
+import { signInWithGoogle, signInWithFacebook, signInWithApple, auth, db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
 import { doc, setDoc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
@@ -72,6 +72,61 @@ export default function Login() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isNetworkError, setIsNetworkError] = useState(false);
   const [isOperationNotAllowed, setIsOperationNotAllowed] = useState(false);
+
+  const [whatsappVerified, setWhatsappVerified] = useState<boolean>(false);
+  const [codeSent, setCodeSent] = useState<boolean>(false);
+  const [sendingCode, setSendingCode] = useState<boolean>(false);
+  const [generatedCode, setGeneratedCode] = useState<string>('');
+  const [userInputCode, setUserInputCode] = useState<string>('');
+  const [verificationError, setVerificationError] = useState<string | null>(null);
+
+  const handleSendCode = async () => {
+    const clean = phoneInput.trim();
+    const digits = clean.replace(/[^\d]/g, '');
+    if (digits.length < 10) {
+      setVerificationError("Por favor, digite um número de WhatsApp válido.");
+      return;
+    }
+
+    setSendingCode(true);
+    setVerificationError(null);
+
+    try {
+      // Check if phone number is already registered inside Firebase first
+      const phoneDocRef = doc(db, 'phones', clean);
+      let phoneSnap;
+      try {
+        phoneSnap = await getDoc(phoneDocRef);
+      } catch (dbErr: any) {
+        handleFirestoreError(dbErr, OperationType.GET, `phones/${clean}`);
+        throw dbErr;
+      }
+      if (phoneSnap.exists()) {
+        setVerificationError("Este número de telefone já está cadastrado em outra conta do Avalia-me.");
+        setSendingCode(false);
+        return;
+      }
+
+      // Generate a random 6-digit verification code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      setGeneratedCode(code);
+      setCodeSent(true);
+    } catch (err: any) {
+      console.error(err);
+      setVerificationError("Erro ao verificar número do telefone no servidor. Prossiga ou tente novamente.");
+    } finally {
+      setSendingCode(false);
+    }
+  };
+
+  const handleVerifyCode = () => {
+    if (userInputCode === generatedCode) {
+      setWhatsappVerified(true);
+      setVerificationError(null);
+    } else {
+      setVerificationError("Código inválido. Por favor, verifique o código de simulação gerado.");
+    }
+  };
 
   const handleGoogleLogin = async () => {
     setLoading(true);
@@ -172,6 +227,11 @@ export default function Login() {
         setErrorMsg('Por favor, informe um número de telefone celular válido com DDD.');
         return;
       }
+
+      if (!whatsappVerified) {
+        setErrorMsg('A validação do seu WhatsApp por mensagem é obrigatória para realizar o cadastro.');
+        return;
+      }
     }
 
     setLoading(true);
@@ -188,7 +248,14 @@ export default function Login() {
         setStatusMsg('Validando número de telefone...');
         const cleanPhone = phoneInput.trim();
         const phoneDocRef = doc(db, 'phones', cleanPhone);
-        const phoneSnap = await getDoc(phoneDocRef);
+        
+        let phoneSnap;
+        try {
+          phoneSnap = await getDoc(phoneDocRef);
+        } catch (dbErr: any) {
+          handleFirestoreError(dbErr, OperationType.GET, `phones/${cleanPhone}`);
+          throw dbErr;
+        }
 
         if (phoneSnap.exists()) {
           setStatusMsg('Número de telefone já cadastrado. Revertendo...');
@@ -208,21 +275,31 @@ export default function Login() {
         setStatusMsg('Finalizando cadastro...');
 
         // Register immediate phone registry document
-        await setDoc(phoneDocRef, {
-          userId: user.uid,
-          createdAt: new Date().toISOString()
-        });
+        try {
+          await setDoc(phoneDocRef, {
+            userId: user.uid,
+            createdAt: new Date().toISOString()
+          });
+        } catch (dbErr: any) {
+          handleFirestoreError(dbErr, OperationType.WRITE, `phones/${cleanPhone}`);
+          throw dbErr;
+        }
 
         // Register immediate database user node
         const userDocRef = doc(db, 'users', user.uid);
-        await setDoc(userDocRef, {
-          uid: user.uid,
-          name: nameInput.trim(),
-          email: emailInput.trim().toLowerCase(),
-          phone: phoneInput.trim(),
-          photoURL: avatarUrl,
-          createdAt: new Date().toISOString()
-        });
+        try {
+          await setDoc(userDocRef, {
+            uid: user.uid,
+            name: nameInput.trim(),
+            email: emailInput.trim().toLowerCase(),
+            phone: phoneInput.trim(),
+            photoURL: avatarUrl,
+            createdAt: new Date().toISOString()
+          });
+        } catch (dbErr: any) {
+          handleFirestoreError(dbErr, OperationType.WRITE, `users/${user.uid}`);
+          throw dbErr;
+        }
         setStatusMsg('Tudo pronto! Entrando...');
       } else {
         setStatusMsg('Autenticando...');
@@ -349,7 +426,15 @@ export default function Login() {
         <div className="flex bg-gray-50 p-1 rounded-2xl border border-gray-100 mb-6">
           <button
             type="button"
-            onClick={() => { setIsRegister(false); setErrorMsg(''); setIsNetworkError(false); }}
+            onClick={() => { 
+              setIsRegister(false); 
+              setErrorMsg(''); 
+              setIsNetworkError(false); 
+              setWhatsappVerified(false);
+              setCodeSent(false);
+              setUserInputCode('');
+              setVerificationError(null);
+            }}
             className={`flex-1 py-2.5 text-xs font-black rounded-xl transition-all ${
               !isRegister ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'
             }`}
@@ -358,7 +443,15 @@ export default function Login() {
           </button>
           <button
             type="button"
-            onClick={() => { setIsRegister(true); setErrorMsg(''); setIsNetworkError(false); }}
+            onClick={() => { 
+              setIsRegister(true); 
+              setErrorMsg(''); 
+              setIsNetworkError(false); 
+              setWhatsappVerified(false);
+              setCodeSent(false);
+              setUserInputCode('');
+              setVerificationError(null);
+            }}
             className={`flex-1 py-2.5 text-xs font-black rounded-xl transition-all ${
               isRegister ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'
             }`}
@@ -458,16 +551,138 @@ export default function Login() {
               </div>
 
               {/* Phone field */}
-              <div className="relative group">
-                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 transition-colors group-focus-within:text-blue-500" size={20} />
-                <input 
-                  type="tel" 
-                  required
-                  value={phoneInput}
-                  onChange={(e) => setPhoneInput(formatPhone(e.target.value))}
-                  placeholder="Celular (DDD) ex: (41) 99999-9999"
-                  className="w-full bg-gray-50 border-2 border-transparent focus:border-blue-500 outline-none rounded-2xl py-4 pl-12 pr-4 text-gray-805 placeholder:text-gray-400 font-medium transition-all"
-                />
+              <div className="space-y-3">
+                <div className="relative group">
+                  <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 transition-colors group-focus-within:text-blue-500" size={20} />
+                  <input 
+                    type="tel" 
+                    required
+                    disabled={whatsappVerified}
+                    value={phoneInput}
+                    onChange={(e) => {
+                      setPhoneInput(formatPhone(e.target.value));
+                      setWhatsappVerified(false);
+                      setCodeSent(false);
+                      setUserInputCode('');
+                    }}
+                    placeholder="Celular (DDD) ex: (41) 99999-9999"
+                    className={`w-full border-2 outline-none rounded-2xl py-4 pl-12 pr-12 text-gray-800 placeholder:text-gray-400 font-semibold transition-all ${
+                      whatsappVerified ? 'text-gray-500 bg-gray-100 border-green-200' : 'bg-gray-50 border-transparent focus:border-blue-500'
+                    }`}
+                  />
+                  {whatsappVerified && (
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 bg-green-500 text-white rounded-full p-0.5" title="WhatsApp Verificado!">
+                      <CheckCircle size={16} className="text-white" fill="currentColor" />
+                    </span>
+                  )}
+                </div>
+
+                {/* Validation widget */}
+                {phoneInput.replace(/[^\d]/g, '').length >= 10 && (
+                  <div className="animate-fadeIn">
+                    {!whatsappVerified ? (
+                      <div className="bg-blue-50/50 border border-blue-100/80 rounded-2xl p-4 space-y-4 text-left">
+                        <div className="flex gap-2 items-start text-xs text-blue-800 font-semibold leading-relaxed">
+                          <Info size={16} className="text-blue-500 shrink-0 mt-0.5" />
+                          <p>
+                            Para evitar contas falsas e manter o sistema seguro, valide seu WhatsApp preenchendo o código que enviamos por mensagem.
+                          </p>
+                        </div>
+
+                        {!codeSent ? (
+                          <button
+                            type="button"
+                            disabled={sendingCode}
+                            onClick={handleSendCode}
+                            className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-black py-3 px-4 rounded-xl shadow-md transition-all active:scale-[0.98] disabled:opacity-50 cursor-pointer text-center"
+                          >
+                            {sendingCode ? "Enviando Código..." : "Gerar e Enviar Código ao WhatsApp"}
+                          </button>
+                        ) : (
+                          <div className="space-y-4">
+                            <div className="bg-white border border-blue-100 rounded-xl p-3.5 space-y-2.5 text-xs text-gray-600">
+                              <div className="flex items-center gap-2">
+                                <span className="relative flex h-2 w-2">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                                </span>
+                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Simulador de WhatsApp Ativo</span>
+                              </div>
+                              <p className="font-medium">
+                                Enviamos o código fictício ao seu celular de teste. Digite-o abaixo:
+                              </p>
+                              <div className="flex items-center justify-between bg-blue-50 p-2.5 rounded-lg border border-blue-100/50">
+                                <span className="text-[10px] font-bold text-blue-800">CÓDIGO RECEBIDO:</span>
+                                <span className="text-xs font-mono font-black tracking-wider text-blue-900 bg-white px-2.5 py-1 rounded-md border border-blue-100 shadow-sm">
+                                  {generatedCode}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-col sm:flex-row gap-2">
+                              <input
+                                type="text"
+                                maxLength={6}
+                                value={userInputCode}
+                                onChange={(e) => {
+                                  setUserInputCode(e.target.value.replace(/\D/g, ''));
+                                  setVerificationError(null);
+                                }}
+                                placeholder="Código de 6 dígitos"
+                                className="w-full sm:flex-1 bg-white border border-gray-200 rounded-xl p-3 text-center font-mono font-black text-lg tracking-widest outline-none focus:border-blue-500 focus:ring-1 ring-blue-500 transition-all text-gray-900"
+                              />
+                              <button
+                                type="button"
+                                onClick={handleVerifyCode}
+                                className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white text-xs font-black py-3.5 px-6 rounded-xl transition-all shadow-md active:scale-[0.98] cursor-pointer shrink-0 text-center"
+                              >
+                                Validar Código
+                              </button>
+                            </div>
+
+                            {verificationError && (
+                              <p className="text-red-500 text-xs font-bold leading-snug">
+                                ⚠️ {verificationError}
+                              </p>
+                            )}
+
+                            <div className="text-center">
+                              <button
+                                type="button"
+                                onClick={() => { setCodeSent(false); setUserInputCode(''); }}
+                                className="text-xs text-blue-600 hover:text-blue-800 font-bold transition-all underline cursor-pointer"
+                              >
+                                Reenviar código para WhatsApp
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="bg-green-50 border border-green-200 rounded-2xl p-4 flex items-center justify-between gap-3 shadow-sm select-none text-left">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 bg-green-100 text-green-600 rounded-full flex items-center justify-center shrink-0">
+                            <Check size={16} strokeWidth={3} />
+                          </div>
+                          <div>
+                            <h4 className="text-xs font-black text-green-950">WhatsApp Validado!</h4>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setWhatsappVerified(false);
+                            setCodeSent(false);
+                            setUserInputCode('');
+                          }}
+                          className="text-[10px] font-bold text-rose-600 hover:text-rose-800 bg-white border border-rose-200 rounded-xl px-2.5 py-1.5 shadow-sm transition-all cursor-pointer"
+                        >
+                          Alterar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </>
           )}

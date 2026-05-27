@@ -121,7 +121,7 @@ export default function ReviewModal({ provider, isOpen, onClose }: ReviewModalPr
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[60] flex items-end sm:items-center justify-center">
+        <div className="fixed inset-0 z-[140] flex items-end sm:items-center justify-center">
           <motion.div 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}

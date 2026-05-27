@@ -7,66 +7,10 @@ import ProviderCard from '../components/ProviderCard';
 import ReviewModal from '../components/ReviewModal';
 import { useAuth } from '../lib/AuthContext';
 import { useNotifications } from '../lib/NotificationContext';
-import { seedProviders } from '../services/seed';
 import { useNavigate } from 'react-router-dom';
 import Logo from '../components/Logo';
 import { CATEGORIES } from '../lib/categories';
-
-const extractBasicCity = (locationStr: string | undefined): string => {
-  if (!locationStr) return "";
-  const BRAZILIAN_STATES = [
-    'acre', 'ac', 'alagoas', 'al', 'amapá', 'ap', 'amazonas', 'am', 'bahia', 'ba', 'ceará', 'ce',
-    'distrito federal', 'df', 'espírito santo', 'es', 'goiás', 'go', 'maranhão', 'ma', 'mato grosso', 'mt',
-    'mato grosso do sul', 'ms', 'minas gerais', 'mg', 'pará', 'pa', 'paraíba', 'pb', 'paraná', 'pr',
-    'pernambuco', 'pe', 'piauí', 'pi', 'rio de janeiro', 'rj', 'rio grande do norte', 'rn', 'rio grande do sul', 'rs',
-    'rondônia', 'ro', 'roraima', 'rr', 'santa catarina', 'sc', 'são paulo', 'sp', 'sergipe', 'se', 'tocantins', 'to'
-  ];
-
-  const parts = locationStr.split(',').map(p => p.trim());
-  
-  // Find state index
-  let stateIdx = -1;
-  for (let i = 0; i < parts.length; i++) {
-    const lower = parts[i].toLowerCase();
-    if (BRAZILIAN_STATES.includes(lower)) {
-      stateIdx = i;
-      break;
-    }
-  }
-  
-  if (stateIdx !== -1) {
-    const precedingParts = parts.slice(0, stateIdx);
-    const candidateCities = precedingParts.filter(part => {
-      const lower = part.toLowerCase();
-      if (
-        lower.startsWith('rua ') || lower.startsWith('r.') ||
-        lower.startsWith('av.') || lower.startsWith('avenida') || 
-        lower.startsWith('travessa') || lower.startsWith('tv.') || 
-        lower.startsWith('alameda') || lower.startsWith('al.') || 
-        lower.startsWith('praça') || lower.startsWith('parque') || 
-        lower.startsWith('rodovia') || lower.startsWith('rod.') ||
-        lower.startsWith('beco') || lower.startsWith('condomínio') ||
-        lower.startsWith('jardim') || lower.startsWith('jd.') ||
-        lower.startsWith('bairro') || lower.startsWith('loteamento')
-      ) return false;
-      if (lower.includes('região') || lower.includes('microrregião') || lower.includes('mesorregião') || lower.includes('metropolitana')) return false;
-      if (/^\d+/.test(lower) || /-\d+$/.test(lower)) return false;
-      return true;
-    });
-    if (candidateCities.length > 0) {
-      return candidateCities[candidateCities.length - 1].trim().toLowerCase();
-    }
-  }
-  
-  if (parts.length >= 2) {
-    const firstLower = parts[0].toLowerCase();
-    const isStreet = firstLower.startsWith('rua') || firstLower.startsWith('r.') || firstLower.startsWith('av') || firstLower.startsWith('travessa') || firstLower.startsWith('tv.') || firstLower.startsWith('alameda');
-    const startIdx = isStreet ? 1 : 0;
-    return parts[startIdx]?.trim().toLowerCase() || "";
-  }
-  
-  return parts[0]?.trim().toLowerCase() || "";
-};
+import { extractBasicCity, formatLocation } from '../lib/location';
 
 export default function Home() {
   const [featuredProviders, setFeaturedProviders] = useState<any[]>([]);
@@ -164,12 +108,13 @@ export default function Home() {
   useEffect(() => {
     async function loadData() {
       setLoading(true);
-      await seedProviders();
       
       try {
         const q = query(collection(db, 'providers'), orderBy('rating', 'desc'), limit(40));
         const snapshot = await getDocs(q);
-        const allProviders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const allProviders = snapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter((p: any) => p.whatsappVerified === true);
 
         const userCity = extractBasicCity(profile?.location);
 
@@ -190,7 +135,9 @@ export default function Home() {
         console.error("Error loading providers:", error);
         const qBasic = query(collection(db, 'providers'), limit(20));
         const snapshot = await getDocs(qBasic);
-        const allProviders = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const allProviders = snapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter((p: any) => p.whatsappVerified === true);
         
         const userCity = extractBasicCity(profile?.location);
         const featured = allProviders.filter((p: any) => p.featured === true);
@@ -210,122 +157,7 @@ export default function Home() {
     loadData();
   }, [profile]);
 
-  const getFormattedCity = () => {
-    if (!profile?.location) return "sua região";
-    
-    const BRAZILIAN_STATES: { [key: string]: string } = {
-      'acre': 'Acre', 'ac': 'Acre',
-      'alagoas': 'Alagoas', 'al': 'Alagoas',
-      'amapá': 'Amapá', 'ap': 'Amapá',
-      'amazonas': 'Amazonas', 'am': 'Amazonas',
-      'bahia': 'Bahia', 'ba': 'Bahia',
-      'ceará': 'Ceará', 'ce': 'Ceará',
-      'distrito federal': 'Distrito Federal', 'df': 'Distrito Federal',
-      'espírito santo': 'Espírito Santo', 'es': 'Espírito Santo',
-      'goiás': 'Goiás', 'go': 'Goiás',
-      'maranhão': 'Maranhão', 'ma': 'Maranhão',
-      'mato grosso': 'Mato Grosso', 'mt': 'Mato Grosso',
-      'mato grosso do sul': 'Mato Grosso do Sul', 'ms': 'Mato Grosso do Sul',
-      'minas gerais': 'Minas Gerais', 'mg': 'Minas Gerais',
-      'pará': 'Pará', 'pa': 'Pará',
-      'paraíba': 'Paraíba', 'pb': 'Paraíba',
-      'paraná': 'Paraná', 'pr': 'Paraná',
-      'pernambuco': 'Pernambuco', 'pe': 'Pernambuco',
-      'piauí': 'Piauí', 'pi': 'Piauí',
-      'rio de janeiro': 'Rio de Janeiro', 'rj': 'Rio de Janeiro',
-      'rio grande do norte': 'Rio Grande do Norte', 'rn': 'Rio Grande do Norte',
-      'rio grande do sul': 'Rio Grande do Sul', 'rs': 'Rio Grande do Sul',
-      'rondônia': 'Rondônia', 'ro': 'Rondônia',
-      'roraima': 'Roraima', 'rr': 'Roraima',
-      'santa catarina': 'Santa Catarina', 'sc': 'Santa Catarina',
-      'são paulo': 'São Paulo', 'sp': 'São Paulo',
-      'sergipe': 'Sergipe', 'se': 'Sergipe',
-      'tocantins': 'Tocantins', 'to': 'Tocantins'
-    };
-
-    const parts = profile.location.split(',').map(p => p.trim());
-    
-    // 1. Find state
-    let foundState = "";
-    let stateIdx = -1;
-    for (let i = 0; i < parts.length; i++) {
-      const lower = parts[i].toLowerCase();
-      if (BRAZILIAN_STATES[lower]) {
-        foundState = BRAZILIAN_STATES[lower];
-        stateIdx = i;
-        break;
-      }
-    }
-    
-    if (stateIdx !== -1) {
-      // 2. The city is one of the parts preceding the state
-      const precedingParts = parts.slice(0, stateIdx);
-      
-      const candidateCities = precedingParts.filter(part => {
-        const lower = part.toLowerCase();
-        
-        // Exclude street prefixes
-        if (
-          lower.startsWith('rua ') || 
-          lower.startsWith('r.') ||
-          lower.startsWith('av.') || 
-          lower.startsWith('avenida') || 
-          lower.startsWith('travessa') || 
-          lower.startsWith('tv.') || 
-          lower.startsWith('alameda') || 
-          lower.startsWith('al.') || 
-          lower.startsWith('praça') || 
-          lower.startsWith('parque') || 
-          lower.startsWith('rodovia') || 
-          lower.startsWith('rod.') ||
-          lower.startsWith('beco') ||
-          lower.startsWith('condomínio') ||
-          lower.startsWith('jardim') ||
-          lower.startsWith('jd.') ||
-          lower.startsWith('bairro') ||
-          lower.startsWith('loteamento')
-        ) return false;
-        
-        // Exclude statistical regions
-        if (
-          lower.includes('região') || 
-          lower.includes('microrregião') || 
-          lower.includes('mesorregião') || 
-          lower.includes('metropolitana')
-        ) return false;
-        
-        // Exclude numeric / postal codes
-        if (/^\d+/.test(lower) || /-\d+$/.test(lower)) return false;
-        
-        return true;
-      });
-      
-      if (candidateCities.length > 0) {
-        const city = candidateCities[candidateCities.length - 1];
-        return `${city}, ${foundState}`;
-      }
-    }
-    
-    // Fallback if state is not found
-    if (parts.length >= 2) {
-      const firstLower = parts[0].toLowerCase();
-      const isStreet = firstLower.startsWith('rua') || firstLower.startsWith('r.') || firstLower.startsWith('av') || firstLower.startsWith('travessa') || firstLower.startsWith('tv.') || firstLower.startsWith('alameda');
-      const startIdx = isStreet ? 1 : 0;
-      
-      const city = parts[startIdx];
-      const state = parts[startIdx + 1] || '';
-      if (state) {
-        const stateKey = state.toLowerCase();
-        const displayState = BRAZILIAN_STATES[stateKey] || state;
-        return `${city}, ${displayState}`;
-      }
-      return city;
-    }
-    
-    return profile.location;
-  };
-
-  const userCityName = getFormattedCity();
+  const userCityName = profile?.location ? formatLocation(profile.location) : "sua região";
 
   return (
     <div className="pb-24">
@@ -484,10 +316,10 @@ export default function Home() {
 
         <div 
           onClick={() => navigate('/search')}
-          className="bg-white rounded-2xl p-4 flex items-center gap-3 shadow-xl cursor-pointer"
+          className="bg-white rounded-[18px] py-3.5 px-4 flex items-center gap-2.5 shadow-xl cursor-pointer"
         >
-          <Search className="text-gray-400" size={20} />
-          <span className="flex-1 text-gray-400 text-lg">Buscar prestadores ou serviços...</span>
+          <Search className="text-gray-400 shrink-0" size={18} />
+          <span className="flex-1 text-gray-400 text-sm md:text-base font-semibold truncate whitespace-nowrap">Buscar prestadores ou serviços...</span>
         </div>
       </header>
 
